@@ -8,3 +8,4 @@ edition = "2024"
 proc_macros = { path = "../proc_macros" }
 macros = { path = "../macros" }
 syn = { version = "2.0.106", features = ["full", "extra-traits"] }
+volo-http = "0.4.3"

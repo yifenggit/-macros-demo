@@ -1004,6 +1004,7 @@ dependencies = [
  "macros",
  "proc_macros",
  "syn",
+ "volo-http",
 ]
 
 [[package]]
