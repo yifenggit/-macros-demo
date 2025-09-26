@@ -1174,6 +1174,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "proc_macros_demo"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+ "volo-http",
+]
+
+[[package]]
 name = "ptr_meta"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

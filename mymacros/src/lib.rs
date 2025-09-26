@@ -1,8 +1,7 @@
 use syn::{
     Attribute, Error,
     Expr::{self},
-    ExprLit, Field, Fields, ItemStruct, Lit, LitInt, LitStr, Meta, MetaList, MetaNameValue, Token,
-    parenthesized, parse_quote,
+    Field, Fields, ItemStruct, Lit, LitStr, Meta, MetaList, MetaNameValue, Token, parse_quote,
     punctuated::Punctuated,
 };
 
@@ -42,12 +41,12 @@ pub fn proc_test() -> Result<(), syn::Error> {
 }
 
 // 定义属性优先级顺序
-const ATTR_PRIORITY: &[&str] = &["path", "uri", "json", "form", "header"];
+const FORMATS: &[&str] = &["path", "uri", "json", "form", "header"];
 
 /// 优先从指定属性获取字段名，如果没有则返回字段本身名称
 pub fn get_field_name(default_format: &str, field: &Field) -> (String, String) {
     // 按优先级查找属性
-    for attr_name in ATTR_PRIORITY {
+    for attr_name in FORMATS {
         if let Some(name) = get_attr_field_name(field, attr_name) {
             return name;
         }
@@ -110,10 +109,7 @@ fn meta_lit_str(ml: &MetaList) -> Option<String> {
     ml.parse_args::<LitStr>().ok().map(|m| m.value())
 }
 
-/// 从指定属性中提取字段名
-const SUPPORTED_FORMATS: &[&str] = &["json", "uri", "path", "form", "header"];
 /// 提取结构体的默认格式配置（增强错误处理版）
-
 fn get_default_format(attrs: &[Attribute]) -> Result<String, Error> {
     let default_attrs: Vec<_> = attrs
         .iter()
@@ -177,7 +173,7 @@ fn get_default_format(attrs: &[Attribute]) -> Result<String, Error> {
 
 fn validate_format(lit_str: &LitStr) -> Result<String, Error> {
     let format = lit_str.value();
-    if SUPPORTED_FORMATS.contains(&format.as_str()) {
+    if FORMATS.contains(&format.as_str()) {
         Ok(format)
     } else {
         Err(Error::new_spanned(
@@ -185,7 +181,7 @@ fn validate_format(lit_str: &LitStr) -> Result<String, Error> {
             format!(
                 "Unsupported format '{}'. Expected one of: {}",
                 format,
-                SUPPORTED_FORMATS.join(", ")
+                FORMATS.join(", ")
             ),
         ))
     }
