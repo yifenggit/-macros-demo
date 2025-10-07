@@ -1,5 +1,3 @@
-use std::{clone, collections::HashMap};
-
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{
@@ -27,10 +25,10 @@ pub fn expand_params_bind(input: &mut DeriveInput) -> Result<TokenStream, syn::E
     }
 
     println!("struct name: {}", struct_name);
-    for (field_name, format, name) in field_formats {
+    for item in field_formats {
         println!(
-            "field name: {}, format: {}, param name: {}",
-            field_name, format, name
+            "field name: {}, field type: {}, format: {}, param name: {}",
+            item.field_name, item.filed_type, item.format, item.param_name
         );
     }
 
@@ -42,31 +40,41 @@ pub fn expand_params_bind(input: &mut DeriveInput) -> Result<TokenStream, syn::E
 const FORMATS: &[&str] = &["path", "uri", "json", "form", "header"];
 
 /// 优先从指定属性获取字段名，如果没有则返回字段本身名称
-pub fn get_field_name(struct_format: &str, field: &Field) -> (String, String, String) {
+fn get_field_name(struct_format: &str, field: &Field) -> FieldFormat {
     // 按优先级查找属性
     for attr_name in FORMATS {
-        if let Some(name) = get_attr_field_name(field, attr_name) {
-            return name;
+        if let Some(field_format) = get_attr_field_name(field, attr_name) {
+            return field_format;
         }
     }
 
     let field_name = field.ident.as_ref().unwrap().to_string();
     // 默认返回字段标识符
-    let default = (
-        field_name.clone(),
-        struct_format.to_string(),
-        field_name.clone(),
-    );
-    default
+    FieldFormat {
+        field_name: field_name.clone(),
+        filed_type: get_type_string(&field.ty),
+        format: struct_format.to_string(),
+        param_name: field_name,
+    }
+}
+
+#[derive(Default, Clone)]
+struct FieldFormat {
+    field_name: String,
+    filed_type: String,
+    format: String,
+    param_name: String,
 }
 
 /// 优化后的字段属性解析（消除冗余clone）
-fn get_attr_field_name(field: &Field, attr_name: &str) -> Option<(String, String, String)> {
+fn get_attr_field_name(field: &Field, attr_name: &str) -> Option<FieldFormat> {
     // 提前获取字段名（仅执行一次）
     let field_name = field.ident.as_ref()?;
-    let field_type = get_type_string(&field.ty); 
-    println!("field type: {}", field_type);
-    
+    let field_format = FieldFormat {
+        field_name: field_name.to_string(),
+        filed_type: get_type_string(&field.ty),
+        ..Default::default()
+    };
 
     field
         .attrs
@@ -75,20 +83,18 @@ fn get_attr_field_name(field: &Field, attr_name: &str) -> Option<(String, String
         .find_map(|attr| {
             // 处理 #[uri] 无参数属性
             if let Meta::Path(_) = attr.meta.clone() {
-                return Some((
-                    field_name.to_string(), // 需要保留字段名副本
-                    attr_name.into(),       // 自动转换 &str -> String
-                    field_name.to_string(), // 返回字段名作为值
-                ));
+                let mut field_format = field_format.clone();
+                field_format.format = attr_name.to_string();
+                field_format.param_name = field_name.to_string();
+                return Some(field_format);
             }
 
             // 处理 #[path("value")] 直接字面量
             if let Ok(lit_str) = attr.parse_args::<LitStr>() {
-                return Some((
-                    field_name.to_string(), // 转移所有权
-                    attr_name.into(),
-                    lit_str.value(), // 获取字面量值
-                ));
+                let mut field_format = field_format.clone();
+                field_format.format = attr_name.into();
+                field_format.param_name = lit_str.value();
+                return Some(field_format);
             }
 
             // 处理嵌套属性（如 rename = "value" 或 rename("value")）
@@ -98,13 +104,20 @@ fn get_attr_field_name(field: &Field, attr_name: &str) -> Option<(String, String
                     nested.into_iter().find_map(|meta| match &meta {
                         // 处理 rename = "value" 命名值形式
                         Meta::NameValue(nv) if nv.path.is_ident("rename") => {
-                            meta_name_value_str(nv)
-                                .map(|s| (field_name.to_string(), attr_name.into(), s))
+                            meta_name_value_str(nv).map(|s| {
+                                let mut field_format = field_format.clone();
+                                field_format.format = attr_name.into();
+                                field_format.param_name = s;
+                                field_format
+                            })
                         }
                         // 处理 rename("value") 列表形式
-                        Meta::List(ml) if ml.path.is_ident("rename") => {
-                            meta_lit_str(ml).map(|s| (field_name.to_string(), attr_name.into(), s))
-                        }
+                        Meta::List(ml) if ml.path.is_ident("rename") => meta_lit_str(ml).map(|s| {
+                            let mut field_format = field_format.clone();
+                            field_format.format = attr_name.into();
+                            field_format.param_name = s;
+                            field_format.clone()
+                        }),
                         // 忽略其他元数据格式
                         _ => None,
                     })
@@ -115,12 +128,13 @@ fn get_attr_field_name(field: &Field, attr_name: &str) -> Option<(String, String
 // 类型解析辅助函数
 fn get_type_string(ty: &syn::Type) -> String {
     match ty {
-        syn::Type::Path(type_path) => {
-            type_path.path.segments.last()
-                .map(|seg| seg.ident.to_string())
-                .unwrap_or_else(|| "Unknown".to_string())
-        }
-        _ => format!("{:?}", ty) // 其他复杂类型转为调试字符串
+        syn::Type::Path(type_path) => type_path
+            .path
+            .segments
+            .last()
+            .map(|seg| seg.ident.to_string())
+            .unwrap_or_else(|| "Unknown".to_string()),
+        _ => format!("{:?}", ty), // 其他复杂类型转为调试字符串
     }
 }
 
