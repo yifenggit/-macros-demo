@@ -7,24 +7,37 @@ use syn::{
     punctuated::Punctuated,
 };
 
-use volo_http::{PathParams, server::extract::Json, server::param::PathParamsMap};
+use volo_http::{
+    Bytes,
+    body::Body,
+    context::ServerContext,
+    error::server::{ExtractBodyError, GenericRejectionError},
+    http::request::Parts,
+    server::extract::{Form, Json, Query},
+    server::extract::{FromContext, FromRequest},
+    server::param::PathParamsRejection,
+    server::param::{PathParams, PathParamsMap},
+};
 
-pub fn expand_params_bind(input: &mut DeriveInput) -> Result<TokenStream, syn::Error> {
+pub fn expand_params_bind(input: &mut DeriveInput) -> Result<TokenStream, Error> {
     let struct_name = input.ident.to_string();
     let mut field_formats = Vec::new();
     let default_format = get_default_format(&input.attrs).unwrap();
 
+    let mut formats = Vec::new();
     if let syn::Data::Struct(data) = &input.data {
         if let Fields::Named(fields_named) = &data.fields {
             for field in &fields_named.named {
                 // 遍历每个字段的属性
-                let val = get_field_name(default_format.as_str(), field);
+                let val = get_field_name(default_format.as_str(), field)?;
+                formats.push(val.format.clone());
                 field_formats.push(val);
             }
         }
     }
 
-    println!("struct name: {}", struct_name);
+    let json = "json".to_string();
+    let form = "form".to_string();
     for item in field_formats {
         println!(
             "field name: {}, field type: {}, format: {}, param name: {}",
@@ -32,30 +45,85 @@ pub fn expand_params_bind(input: &mut DeriveInput) -> Result<TokenStream, syn::E
         );
     }
 
-    let expanded = quote! {};
+    let expanded;
+    let has_json = formats.contains(&json);
+    let has_form = formats.contains(&form);
+    if has_json || has_form {
+        expanded = quote! {
+            impl FromRequest for  #struct_name
+            {
+                type Rejection = ExtractBodyError;
+                async fn from_request(
+                    cx: &mut ServerContext,
+                    parts: Parts,
+                    body: B,
+                ) -> Result<Self, Self::Rejection> {
+                    if !content_type_matches(&parts.headers, mime::APPLICATION, mime::WWW_FORM_URLENCODED) {
+                        return Err(crate::error::server::invalid_content_type());
+                    }
+                    let bytes = Bytes::from_request(cx, parts, body).await?;
+                    let form =
+                        serde_urlencoded::from_bytes::<T>(bytes.as_ref()).map_err(ExtractBodyError::Form)?;
+
+                    Ok(Form(form))
+                }
+            }
+        };
+    } else {
+        expanded = quote! {
+            impl FromContext for #struct_name
+            {
+                type Rejection = Infallible;
+
+                async fn from_context(cx: &mut ServerContext, _: &mut Parts) -> Result<Self, Self::Rejection> {
+                    let params = cx.params();
+                    let mut inner = AHashMap::with_capacity(params.len());
+
+                    for (k, v) in params.iter() {
+                        inner.insert(k.clone(), v.clone());
+                    }
+
+                    Ok(Self { inner })
+                }
+            }
+        };
+    }
+
     Ok(TokenStream::from(expanded))
 }
 
 // 定义属性优先级顺序
 const FORMATS: &[&str] = &["path", "uri", "json", "form", "header"];
+const CONTEXT_FORMATS: &[&str] = &["path", "uri", "header"];
 
 /// 优先从指定属性获取字段名，如果没有则返回字段本身名称
-fn get_field_name(struct_format: &str, field: &Field) -> FieldFormat {
+fn get_field_name(struct_format: &str, field: &Field) -> Result<FieldFormat, Error> {
     // 按优先级查找属性
     for attr_name in FORMATS {
         if let Some(field_format) = get_attr_field_name(field, attr_name) {
-            return field_format;
+            if !CONTEXT_FORMATS.contains(&field_format.format.as_str())
+                && struct_format != field_format.format
+            {
+                return Err(Error::new_spanned(
+                    field,
+                    format!(
+                        "Struct format: {} (default) | Field binding: {} disabled",
+                        struct_format, field_format.format
+                    ),
+                ));
+            }
+            return Ok(field_format);
         }
     }
 
     let field_name = field.ident.as_ref().unwrap().to_string();
     // 默认返回字段标识符
-    FieldFormat {
+    Ok(FieldFormat {
         field_name: field_name.clone(),
         filed_type: get_type_string(&field.ty),
         format: struct_format.to_string(),
         param_name: field_name,
-    }
+    })
 }
 
 #[derive(Default, Clone)]
@@ -248,11 +316,11 @@ mod tests {
                 pub text: String,
                 #[json]
                 pub sex: String,
-                #[form]
+                #[json]
                 pub age: u16,
                 pub idcard: String,
             }
         };
-        let _ = expand_params_bind(&mut input);
+        let _ = expand_params_bind(&mut input).unwrap();
     }
 }

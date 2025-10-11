@@ -2,7 +2,7 @@ use proc_macro::TokenStream;
 use syn::{DeriveInput, parse_macro_input};
 mod params_bind;
 
-#[proc_macro_derive(ParamBind, attributes(from))]
+#[proc_macro_derive(ParamBind, attributes(from,path,uri,json,header))]
 pub fn param_bind_derive(input: TokenStream) -> TokenStream {
     let mut input = parse_macro_input!(input as DeriveInput);
     params_bind::expand_params_bind(&mut input)
