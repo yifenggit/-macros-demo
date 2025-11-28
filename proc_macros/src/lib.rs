@@ -1,11 +1,11 @@
 use proc_macro::TokenStream;
 use syn::{DeriveInput, parse_macro_input};
-mod params_bind;
+mod mapping;
 
-#[proc_macro_derive(ParamBind, attributes(from,path,uri,json,header))]
+#[proc_macro_derive(Mapping, attributes(from,path,uri,json,header,serde))]
 pub fn param_bind_derive(input: TokenStream) -> TokenStream {
     let mut input = parse_macro_input!(input as DeriveInput);
-    params_bind::expand_params_bind(&mut input)
+    mapping::expand_params_mapping(&mut input)
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
 }

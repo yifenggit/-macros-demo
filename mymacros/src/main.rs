@@ -90,6 +90,25 @@
 use mymacros::proc_test;
 
 fn main() {
-    println!("Hello, world!");
-    let _ = proc_test();
+    // println!("Hello, world!");
+    // let _ = proc_test();
+
+    macro_rules! print_tt {
+        // ($input:tt) => {
+        //     println!("The token tree is: {:?}", stringify!($input));
+        // };
+        ($($tt:tt)*) => { [$(stringify!($tt)),*].len() };
+    }
+    let a = print_tt!(a b c + 1 2 3);
+    println!("{}", a);
+
+    macro_rules! call_func {
+        ($p:path) => {
+            $p()
+        };
+    }
+    fn foo() {
+        println!("foo called");
+    }
+    call_func!(foo);
 }

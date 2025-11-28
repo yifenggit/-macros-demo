@@ -1,0 +1,16 @@
+[package]
+name = "volo_http_demo"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ahash = "0.8.12"
+bytes = "1.10.1"
+mime = "0.3.17"
+serde = "1.0.228"
+serde_json = "1.0.145"
+serde_urlencoded = "0.7.1"
+sonic-rs = "0.5.5"
+tokio = "1.47.1"
+volo = "0.12"
+volo-http = { version = "0.5", features = ["default-server", "http2", "json"] }
