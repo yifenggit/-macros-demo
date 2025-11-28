@@ -265,8 +265,10 @@ pub fn expand_params_mapping(input: &mut DeriveInput) -> Result<TokenStream, Err
         }
     }
 
-    for (key, items) in map_fields.iter() {
-        println!("format: {}", key);
+    let mut format_deserialize_expanded = Vec::new();
+    for (format, items) in map_fields.iter() {
+        format_deserialize_expanded.push(format_expanded(format, &items));
+        println!("format: {}", format);
         for item in items {
             println!(
                 "field name: {}, field type: {}, format: {}, rename: {}",
@@ -274,12 +276,6 @@ pub fn expand_params_mapping(input: &mut DeriveInput) -> Result<TokenStream, Err
             );
         }
     }
-
-    let json_code_expanded = format_expanded("json", &map_fields);
-    let form_code_expanded = format_expanded("form", &map_fields);
-    let query_code_expanded = format_expanded("query", &map_fields);
-    let header_code_expanded = format_expanded("header", &map_fields);
-    let path_code_expanded = format_expanded("path", &map_fields);
 
     let expanded = quote! {
         impl FromRequest for #struct_name {
@@ -291,11 +287,7 @@ pub fn expand_params_mapping(input: &mut DeriveInput) -> Result<TokenStream, Err
                 body: Body,
             ) -> Result<Self, Self::Rejection> {
                 let mut res = Self::default();
-                #json_code_expanded
-                #form_code_expanded
-                #query_code_expanded
-                #header_code_expanded
-                #path_code_expanded
+                #(#format_deserialize_expanded)*
                 Ok(res)
             }
         }
@@ -355,6 +347,7 @@ fn header_deserialize_expanded(field_formats: &Vec<FieldFormat>) -> TokenStream 
         });
     }
     quote! {
+        // header deserialize
         #(#field_definitions)*
     }
 }
@@ -370,6 +363,7 @@ fn path_deserialize_expanded(field_formats: &Vec<FieldFormat>) -> TokenStream {
         });
     }
     quote! {
+        // path deserialize
         let params = cx.params();
         for (k, v) in params.iter() {
             match k.as_str() {
@@ -381,64 +375,64 @@ fn path_deserialize_expanded(field_formats: &Vec<FieldFormat>) -> TokenStream {
     }
 }
 
-fn format_expanded(format: &str, map_fields: &HashMap<String, Vec<FieldFormat>>) -> TokenStream {
-    if let Some(field_formats) = map_fields.get(format) {
-        match format {
-            "json" => {
-                return deserialize_expanded(
-                    field_formats,
-                    format,
-                    |struct_name, struct_def_expanded, set_val_expanded| {
-                        quote! {
-                            if content_type_matches(&parts.headers, mime::APPLICATION, mime::JSON) {
-                                #struct_def_expanded
-                                let bytes = Bytes::from_request(cx, parts.clone(), body).await?;
-                                let val = sonic_rs::from_slice::<#struct_name>(&bytes).map_err(ExtractBodyError::Json)?;
-                                #set_val_expanded
-                            }
-                        }
-                    },
-                );
-            }
-            "form" => {
-                return deserialize_expanded(
-                    field_formats,
-                    format,
-                    |struct_name, struct_def_expanded, set_val_expanded| {
-                        quote! {
+fn format_expanded(format: &str, field_formats: &Vec<FieldFormat>) -> TokenStream {
+    match format {
+        "json" => {
+            return deserialize_expanded(
+                field_formats,
+                format,
+                |struct_name, struct_def_expanded, set_val_expanded| {
+                    quote! {
+                        // json deserialize
+                        if content_type_matches(&parts.headers, mime::APPLICATION, mime::JSON) {
                             #struct_def_expanded
                             let bytes = Bytes::from_request(cx, parts.clone(), body).await?;
-                            let val = serde_urlencoded::from_bytes::<#struct_name>(bytes.as_ref()).map_err(ExtractBodyError::Form)?;
+                            let val = sonic_rs::from_slice::<#struct_name>(&bytes).map_err(ExtractBodyError::Json)?;
                             #set_val_expanded
                         }
-                    },
-                );
-            }
-            "query" => {
-                return deserialize_expanded(
-                    field_formats,
-                    format,
-                    |struct_name, struct_def_expanded, set_val_expanded| {
-                        quote! {
-                            if let Some(query_str) = parts.uri.query() {
-                                #struct_def_expanded
-                                let val = serde_urlencoded::from_str::<#struct_name>(query_str).unwrap();
-                                #set_val_expanded
-                            }
-                        }
-                    },
-                );
-            }
-            "header" => {
-                return header_deserialize_expanded(field_formats);
-            }
-            "path" => {
-                return path_deserialize_expanded(field_formats);
-            }
-            _ => {}
+                    }
+                },
+            );
         }
+        "form" => {
+            return deserialize_expanded(
+                field_formats,
+                format,
+                |struct_name, struct_def_expanded, set_val_expanded| {
+                    quote! {
+                        // form deserialize
+                        #struct_def_expanded
+                        let bytes = Bytes::from_request(cx, parts.clone(), body).await?;
+                        let val = serde_urlencoded::from_bytes::<#struct_name>(bytes.as_ref()).map_err(ExtractBodyError::Form)?;
+                        #set_val_expanded
+                    }
+                },
+            );
+        }
+        "query" => {
+            return deserialize_expanded(
+                field_formats,
+                format,
+                |struct_name, struct_def_expanded, set_val_expanded| {
+                    quote! {
+                        // query deserialize
+                        if let Some(query_str) = parts.uri.query() {
+                            #struct_def_expanded
+                            let val = serde_urlencoded::from_str::<#struct_name>(query_str).unwrap();
+                            #set_val_expanded
+                        }
+                    }
+                },
+            );
+        }
+        "header" => {
+            return header_deserialize_expanded(field_formats);
+        }
+        "path" => {
+            return path_deserialize_expanded(field_formats);
+        }
+        _ => quote! {},
     }
-    quote! {}
 }
 
 #[allow(dead_code)]
