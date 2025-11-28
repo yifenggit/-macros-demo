@@ -5,7 +5,8 @@ use std::collections::HashMap;
 use syn::{
     Attribute, DeriveInput, Error,
     Expr::{self},
-    Field, Fields, Lit, LitStr, Meta, MetaList, MetaNameValue, Token, parse_quote,
+    Field, Fields, GenericArgument, Lit, LitStr, Meta, MetaList, MetaNameValue, PathArguments,
+    Token, Type, parse_quote,
     punctuated::Punctuated,
 };
 
@@ -24,14 +25,16 @@ use volo_http::{
 // 定义属性优先级顺序
 const FORMATS: &[&str] = &["path", "query", "json", "form", "header"];
 const CONTEXT_FORMATS: &[&str] = &["path", "query", "header"];
+const OPTION_FORMATS: &[&str] = &["path", "header"];
 
 #[derive(Default, Clone)]
 struct FieldFormat {
-    field_name: String,
-    filed_type: TokenStream,
+    name: String,
+    f_type: TokenStream,
     format: String,
     serde: Option<TokenStream>,
     rename: String,
+    is_option: bool,
 }
 
 fn serde_indent(field: &Field) -> (Option<TokenStream>, Option<String>) {
@@ -78,20 +81,57 @@ fn get_field_name(struct_format: &str, field: &Field) -> Result<FieldFormat, Err
             if rename.is_some() {
                 field_format.rename = rename.unwrap();
             }
+            field_format.is_option = is_option_type(field);
+            if field_format.is_option && OPTION_FORMATS.contains(&field_format.format.as_str()) {
+                field_format.f_type = get_option_inner_type(field).unwrap();
+            }
             return Ok(field_format);
         }
     }
 
     let field_name = field.ident.as_ref().unwrap().to_string();
-    let field_type = &field.ty;
+    let mut f_type = quote!(#(&field.ty));
+    if is_option_type(field) && OPTION_FORMATS.contains(&struct_format) {
+        f_type = get_option_inner_type(field).unwrap();
+    }
     // 默认返回字段标识符
     Ok(FieldFormat {
         serde: serde_attr,
-        field_name: field_name.clone(),
-        filed_type: quote!(#field_type),
+        name: field_name.clone(),
+        f_type: f_type,
         format: struct_format.to_string(),
         rename: field_name,
+        is_option: is_option_type(field),
     })
+}
+
+fn is_option_type(field: &Field) -> bool {
+    match &field.ty {
+        Type::Path(type_path) => {
+            let path = &type_path.path;
+            path.is_ident("Option")
+                || path
+                    .segments
+                    .iter()
+                    .any(|segment| segment.ident == "Option")
+        }
+        _ => false,
+    }
+}
+
+fn get_option_inner_type(field: &Field) -> Option<TokenStream> {
+    if let Type::Path(type_path) = &field.ty {
+        if let Some(segment) = type_path.path.segments.last() {
+            if segment.ident == "Option" {
+                if let PathArguments::AngleBracketed(args) = &segment.arguments {
+                    if let Some(GenericArgument::Type(inner_ty)) = args.args.first() {
+                        return Some(inner_ty.to_token_stream());
+                    }
+                }
+            }
+        }
+    }
+    None
 }
 
 fn get_attr_field_name(field: &Field, attr_name: &str) -> Option<FieldFormat> {
@@ -100,8 +140,8 @@ fn get_attr_field_name(field: &Field, attr_name: &str) -> Option<FieldFormat> {
 
     let field_type = &field.ty;
     let field_format = FieldFormat {
-        field_name: field_name.to_string(),
-        filed_type: quote!(#field_type),
+        name: field_name.to_string(),
+        f_type: quote!(#field_type),
         ..Default::default()
     };
 
@@ -271,8 +311,8 @@ pub fn expand_params_mapping(input: &mut DeriveInput) -> Result<TokenStream, Err
         println!("format: {}", format);
         for item in items {
             println!(
-                "field name: {}, field type: {}, format: {}, rename: {}",
-                item.field_name, item.filed_type, item.format, item.rename
+                "field name: {}, field type: {}, format: {}, rename: {}, is_option: {}",
+                item.name, item.f_type, item.format, item.rename, item.is_option
             );
         }
     }
@@ -305,8 +345,8 @@ where
     let mut field_definitions = Vec::new();
     let mut set_val_definitions = Vec::new();
     for field in field_formats {
-        let field_name_ident = format_ident!("{}", field.field_name);
-        let field_type = &field.filed_type;
+        let field_name_ident = format_ident!("{}", field.name);
+        let field_type = &field.f_type;
         let mut serade_attr = quote! {};
 
         if let Some(attr) = &field.serde {
@@ -335,14 +375,22 @@ where
 fn header_deserialize_expanded(field_formats: &Vec<FieldFormat>) -> TokenStream {
     let mut field_definitions = Vec::new();
     for field in field_formats {
-        let field_name_ident = format_ident!("{}", field.field_name);
-        let field_type = &field.filed_type;
+        let field_name_ident = format_ident!("{}", field.name);
+        let field_type = &field.f_type;
         let rename = &field.rename;
+        let mut from_str_parse = quote! {
+            if let Ok(val) = v.to_str().unwrap().parse::<#field_type>() {
+                res.#field_name_ident = val;
+            }
+        };
+        if field.is_option {
+            from_str_parse = quote! {
+                res.#field_name_ident = v.to_str().unwrap().parse::<#field_type>().ok();
+            }
+        }
         field_definitions.push(quote! {
             if let Some(v) = parts.headers.get(#rename) {
-                if let Ok(val) = v.to_str().unwrap().parse::<#field_type>() {
-                    res.#field_name_ident = Some(val);
-                }
+                #from_str_parse
             }
         });
     }
@@ -355,11 +403,24 @@ fn header_deserialize_expanded(field_formats: &Vec<FieldFormat>) -> TokenStream 
 fn path_deserialize_expanded(field_formats: &Vec<FieldFormat>) -> TokenStream {
     let mut field_definitions = Vec::new();
     for field in field_formats {
-        let field_name_ident = format_ident!("{}", field.field_name);
-        let field_type = &field.filed_type;
+        let field_name_ident = format_ident!("{}", field.name);
+        let field_type = &field.f_type;
         let rename = &field.rename;
+        let mut from_str_parse = quote! {
+            #rename => {
+                if let Ok(val) = v.parse::<#field_type>() {
+                    res.#field_name_ident = val;
+                }
+            },
+        };
+        if field.is_option {
+            from_str_parse = quote! {
+                #rename => res.#field_name_ident = v.parse::<#field_type>().ok(),
+            }
+        }
+
         field_definitions.push(quote! {
-            #rename => res.#field_name_ident = v.parse::<#field_type>(),
+            #from_str_parse
         });
     }
     quote! {
@@ -466,7 +527,7 @@ mod tests {
             #[format = "json"]
             pub struct MyStruct{
                 #[path]
-                pub id: u64,
+                pub id: Option<u64>,
                 #[path]
                 pub q: String,
                 #[path]
@@ -483,7 +544,7 @@ mod tests {
                 pub age: Vec<u16>,
                 #[header]
                 #[serde(default, rename = "idcard2")]
-                pub idcard: String,
+                pub idcard: Option<String>,
             }
         };
         let result = expand_params_mapping(&mut input).unwrap();
