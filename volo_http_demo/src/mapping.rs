@@ -138,13 +138,31 @@ impl FromRequest for TestParam {
             struct JsonMode {
                 #[serde(default, rename = "user_id2")]
                 user_id: i64,
-                #[serde(default)]
-                uid: i64,
             }
             let bytes = Bytes::from_request(cx, parts.clone(), body).await?;
             let val = sonic_rs::from_slice::<JsonMode>(&bytes).map_err(ExtractBodyError::Json)?;
             res.user_id = val.user_id;
+        } else {
+            #[derive(Deserialize, Default)]
+            struct FormMode {
+                #[serde(default)]
+                uid: i64,
+            }
+            let bytes = Bytes::from_request(cx, parts.clone(), body).await?;
+            let val = serde_urlencoded::from_bytes::<FormMode>(bytes.as_ref())
+                .map_err(ExtractBodyError::Form)?;
             res.uid = val.uid;
+        }
+        if let Some(v) = parts.headers.get("token") {
+            res.token = v.to_str().unwrap().parse::<i64>().ok();
+        }
+        if let Some(v) = parts.headers.get("ids") {
+            if let Ok(v) = v.to_str() {
+                res.ids = v
+                    .split(",")
+                    .map(|x| x.parse::<i64>().unwrap_or_default())
+                    .collect();
+            }
         }
         let params = cx.params();
         for (k, v) in params.iter() {
@@ -179,17 +197,6 @@ impl FromRequest for TestParam {
             }
             let val = serde_urlencoded::from_str::<QueryMode>(query_str).unwrap();
             res.id = val.id;
-        }
-        if let Some(v) = parts.headers.get("token") {
-            res.token = v.to_str().unwrap().parse::<i64>().ok();
-        }
-        if let Some(v) = parts.headers.get("ids") {
-            if let Ok(v) = v.to_str() {
-                res.ids = v
-                    .split(",")
-                    .map(|x| x.parse::<i64>().unwrap_or_default())
-                    .collect();
-            }
         }
         Ok(res)
     }

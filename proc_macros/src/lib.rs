@@ -1,6 +1,9 @@
 use proc_macro::TokenStream;
 use syn::{DeriveInput, parse_macro_input};
 mod mapping;
+mod helper;
+mod field_struct;
+mod deserialize;
 
 #[proc_macro_derive(Mapping, attributes(from,path,uri,json,header,serde))]
 pub fn param_bind_derive(input: TokenStream) -> TokenStream {
