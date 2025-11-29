@@ -77,31 +77,20 @@ fn get_field_name(struct_format: &str, field: &Field) -> Result<FieldFormat, Err
                     ),
                 ));
             }
+            let (is_option, is_vec, f_type) = composite_type(&column.format.as_str(), &field.ty);
             column.serde = serde_attr;
+            column.rename = column.name.clone();
             if rename.is_some() {
-                column.rename = rename.unwrap();
+                column.rename = rename.unwrap_or_default();
             }
-            column.is_option = is_option_type(field);
-            column.is_vec = is_vec_type(field);
-            if OPTION_FORMATS.contains(&column.format.as_str()) {
-                if column.is_vec {
-                    column.f_type = get_vec_inner_type(field).unwrap();
-                } else if column.is_option {
-                    column.f_type = get_option_inner_type(field).unwrap();
-                }
-            }
+            column.is_option = is_option;
+            column.is_vec = is_vec;
+            column.f_type = f_type;
             return Ok(column);
         }
     }
     let field_name = field.ident.as_ref().unwrap().to_string();
-    let mut f_type = quote!(#(&field.ty));
-    if OPTION_FORMATS.contains(&struct_format) {
-        if is_option_type(field) {
-            f_type = get_option_inner_type(field).unwrap();
-        } else if is_vec_type(field) {
-            f_type = get_vec_inner_type(field).unwrap();
-        }
-    }
+    let (is_option, is_vec, f_type) = composite_type(&struct_format.to_string(), &field.ty);
     // 默认返回字段标识符
     Ok(FieldFormat {
         serde: serde_attr,
@@ -109,13 +98,36 @@ fn get_field_name(struct_format: &str, field: &Field) -> Result<FieldFormat, Err
         f_type: f_type,
         format: struct_format.to_string(),
         rename: field_name,
-        is_option: is_option_type(field),
-        is_vec: is_vec_type(field),
+        is_option: is_option,
+        is_vec: is_vec,
     })
 }
 
-fn outer_type(symbol: &str, field: &Field) -> bool {
-    match &field.ty {
+fn composite_type(format: &str, ty: &Type) -> (bool, bool, TokenStream) {
+    if OPTION_FORMATS.contains(&format) {
+        let is_option = is_option_type(ty);
+        let mut is_vec = is_vec_type(ty);
+        if is_option {
+            let cty = get_option_inner_type(ty).unwrap();
+            let mut f_type = cty.to_token_stream();
+            if is_vec_type(&cty) {
+                is_vec = true;
+                f_type = get_vec_inner_type(&cty).unwrap().to_token_stream();
+            }
+            return (is_option, is_vec, f_type);
+        } else {
+            if is_vec {
+                let f_type = get_vec_inner_type(ty).unwrap().to_token_stream();
+                return (is_option, is_vec, f_type);
+            }
+        }
+    }
+
+    (false, false, ty.to_token_stream())
+}
+
+fn outer_type(symbol: &str, ty: &Type) -> bool {
+    match ty {
         Type::Path(type_path) => {
             let path = &type_path.path;
             path.is_ident(symbol) || path.segments.iter().any(|segment| segment.ident == symbol)
@@ -124,22 +136,22 @@ fn outer_type(symbol: &str, field: &Field) -> bool {
     }
 }
 
-fn is_option_type(field: &Field) -> bool {
-    outer_type("Option", field)
+fn is_option_type(ty: &Type) -> bool {
+    outer_type("Option", ty)
 }
 
-fn is_vec_type(field: &Field) -> bool {
-    outer_type("Vec", field)
+fn is_vec_type(ty: &Type) -> bool {
+    outer_type("Vec", ty)
 }
 
-fn get_inner_type(symbol: &str, field: &Field) -> Option<TokenStream> {
-    if let Type::Path(type_path) = &field.ty {
-        if let Some(segment) = type_path.path.segments.last() {
-            if segment.ident == symbol {
-                if let PathArguments::AngleBracketed(args) = &segment.arguments {
-                    if let Some(GenericArgument::Type(inner_ty)) = args.args.first() {
-                        return Some(inner_ty.to_token_stream());
-                    }
+fn get_inner_type(symbol: &str, ty: &Type) -> Option<Type> {
+    if let Type::Path(type_path) = ty {
+        if let Some(segment) = type_path.path.segments.last()
+            && segment.ident == symbol
+        {
+            if let PathArguments::AngleBracketed(args) = &segment.arguments {
+                if let Some(GenericArgument::Type(inner_ty)) = args.args.first() {
+                    return Some(inner_ty.to_owned());
                 }
             }
         }
@@ -147,12 +159,12 @@ fn get_inner_type(symbol: &str, field: &Field) -> Option<TokenStream> {
     None
 }
 
-fn get_option_inner_type(field: &Field) -> Option<TokenStream> {
-    get_inner_type("Option", field)
+fn get_option_inner_type(ty: &Type) -> Option<Type> {
+    get_inner_type("Option", ty)
 }
 
-fn get_vec_inner_type(field: &Field) -> Option<TokenStream> {
-    get_inner_type("Vec", field)
+fn get_vec_inner_type(ty: &Type) -> Option<Type> {
+    get_inner_type("Vec", ty)
 }
 
 fn get_attr_field_name(field: &Field, attr_name: &str) -> Option<FieldFormat> {
@@ -332,8 +344,8 @@ pub fn expand_params_mapping(input: &mut DeriveInput) -> Result<TokenStream, Err
         println!("format: {}", format);
         for item in items {
             println!(
-                "field name: {}, field type: {}, format: {}, rename: {}, is_option: {}",
-                item.name, item.f_type, item.format, item.rename, item.is_option
+                "field name: {}, field type: {}, format: {}, rename: {}, is_option: {}, is_vec: {}",
+                item.name, item.f_type, item.format, item.rename, item.is_option, item.is_vec
             );
         }
     }
@@ -397,16 +409,32 @@ fn header_deserialize_expanded(field_formats: &Vec<FieldFormat>) -> TokenStream 
     let mut field_definitions = Vec::new();
     for field in field_formats {
         let field_name_ident = format_ident!("{}", field.name);
-        let field_type = &field.f_type;
+        let fty = &field.f_type;
         let rename = &field.rename;
         let mut from_str_parse = quote! {
-            if let Ok(val) = v.to_str().unwrap().parse::<#field_type>() {
+            if let Ok(val) = v.to_str().unwrap().parse::<#fty>() {
                 res.#field_name_ident = val;
             }
         };
         if field.is_option {
+            if field.is_vec {
+                from_str_parse = quote! {
+                    if let Ok(v) = v.to_str() {
+                        res.#field_name_ident = v.split(",").map(|x| x.parse::<#fty>().unwrap_or_default()).collect();
+                    } else {
+                        res.#field_name_ident = None;
+                    }
+                }
+            } else {
+                from_str_parse = quote! {
+                    res.#field_name_ident = v.to_str().unwrap().parse::<#fty>().ok();
+                }
+            }
+        } else if field.is_vec {
             from_str_parse = quote! {
-                res.#field_name_ident = v.to_str().unwrap().parse::<#field_type>().ok();
+                if let Ok(v) = v.to_str() {
+                    res.#field_name_ident = v.split(",").map(|x| x.parse::<#fty>().unwrap_or_default()).collect();
+                }
             }
         }
         field_definitions.push(quote! {
@@ -425,18 +453,32 @@ fn path_deserialize_expanded(field_formats: &Vec<FieldFormat>) -> TokenStream {
     let mut field_definitions = Vec::new();
     for field in field_formats {
         let field_name_ident = format_ident!("{}", field.name);
-        let field_type = &field.f_type;
+        let fty = &field.f_type;
         let rename = &field.rename;
         let mut from_str_parse = quote! {
             #rename => {
-                if let Ok(val) = v.parse::<#field_type>() {
+                if let Ok(val) = v.parse::<#fty>() {
                     res.#field_name_ident = val;
                 }
             },
         };
         if field.is_option {
+            if field.is_vec {
+                from_str_parse = quote! {
+                    #rename => {
+                        res.#field_name_ident = Some(v.split(",").map(|x| x.parse::<#fty>().unwrap_or_default()).collect())
+                    }
+                }
+            } else {
+                from_str_parse = quote! {
+                    #rename => res.#field_name_ident = v.parse::<#fty>().ok(),
+                }
+            }
+        } else if field.is_vec {
             from_str_parse = quote! {
-                #rename => res.#field_name_ident = v.parse::<#field_type>().ok(),
+                #rename => {
+                    res.#field_name_ident = v.split(",").map(|x| x.parse::<#fty>().unwrap_or_default()).collect()
+                }
             }
         }
 
@@ -546,26 +588,29 @@ mod tests {
         let mut input: DeriveInput = parse_quote! {
             #[derive(Mapping)]
             #[format = "json"]
-            pub struct MyStruct{
-                #[path]
-                pub id: Option<u64>,
-                #[path]
-                pub q: String,
-                #[path]
-                #[serde(default, rename = "name1")]
-                pub name: String,
-                #[query]
-                #[serde(default)]
-                pub text: String,
-                #[json]
-                #[serde(default, rename = "sex1")]
-                pub sex: Option<String>,
-                #[json]
-                #[serde(default, rename = "age2")]
-                pub age: Vec<u16>,
+            pub struct TestParam{
                 #[header]
-                #[serde(default, rename = "idcard2")]
-                pub idcard: Option<String>,
+                #[serde(default, rename = "token")]
+                 token: Option<i64>,
+                 #[header]
+                 ids: Vec<i64>,
+                 #[json]
+                #[serde(default, rename = "user_id2")]
+                 user_id: i64,
+                 #[query]
+                #[serde(default)]
+                 id: i64,
+                #[json]
+                #[serde(default)]
+                 uid: i64,
+                 #[path]
+                 pid: Option<i64>,
+                 #[path]
+                 cid: String,
+                 #[path]
+                 cids: Vec<i64>,
+                 #[path]
+                 items: Option<Vec<i64>>,
             }
         };
         let result = expand_params_mapping(&mut input).unwrap();

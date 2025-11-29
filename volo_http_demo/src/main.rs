@@ -168,7 +168,7 @@ pub fn test_router() -> Router {
         .route("/foo/{uid}/{jid}", get(header_handoer))
         .merge(Router::new().route("/json", get(json_handoer)))
         .merge(Router::new().route("/form", get(form_handoer)))
-        .merge(Router::new().route("/test/{pid}/{cid}", get(test_handoer)))
+        .merge(Router::new().route("/test/{pid}/{cid}/{cids}", get(test_handoer)))
 }
 
 fn timeout_handler(_: &ServerContext) -> (StatusCode, &'static str) {
