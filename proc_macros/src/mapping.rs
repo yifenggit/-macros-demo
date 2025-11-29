@@ -35,6 +35,7 @@ struct FieldFormat {
     serde: Option<TokenStream>,
     rename: String,
     is_option: bool,
+    is_vec: bool,
 }
 
 fn serde_indent(field: &Field) -> (Option<TokenStream>, Option<String>) {
@@ -64,35 +65,42 @@ fn serde_indent(field: &Field) -> (Option<TokenStream>, Option<String>) {
 fn get_field_name(struct_format: &str, field: &Field) -> Result<FieldFormat, Error> {
     let (serde_attr, rename) = serde_indent(field);
     for attr_name in FORMATS {
-        if let Some(field_format) = get_attr_field_name(field, attr_name) {
-            let mut field_format = field_format;
-            if !CONTEXT_FORMATS.contains(&field_format.format.as_str())
-                && struct_format != field_format.format
+        if let Some(column) = get_attr_field_name(field, attr_name) {
+            let mut column = column;
+            if !CONTEXT_FORMATS.contains(&column.format.as_str()) && struct_format != column.format
             {
                 return Err(Error::new_spanned(
                     field,
                     format!(
                         "Struct format: {} (default) | Field binding: {} disabled",
-                        struct_format, field_format.format
+                        struct_format, column.format
                     ),
                 ));
             }
-            field_format.serde = serde_attr;
+            column.serde = serde_attr;
             if rename.is_some() {
-                field_format.rename = rename.unwrap();
+                column.rename = rename.unwrap();
             }
-            field_format.is_option = is_option_type(field);
-            if field_format.is_option && OPTION_FORMATS.contains(&field_format.format.as_str()) {
-                field_format.f_type = get_option_inner_type(field).unwrap();
+            column.is_option = is_option_type(field);
+            column.is_vec = is_vec_type(field);
+            if OPTION_FORMATS.contains(&column.format.as_str()) {
+                if column.is_vec {
+                    column.f_type = get_vec_inner_type(field).unwrap();
+                } else if column.is_option {
+                    column.f_type = get_option_inner_type(field).unwrap();
+                }
             }
-            return Ok(field_format);
+            return Ok(column);
         }
     }
-
     let field_name = field.ident.as_ref().unwrap().to_string();
     let mut f_type = quote!(#(&field.ty));
-    if is_option_type(field) && OPTION_FORMATS.contains(&struct_format) {
-        f_type = get_option_inner_type(field).unwrap();
+    if OPTION_FORMATS.contains(&struct_format) {
+        if is_option_type(field) {
+            f_type = get_option_inner_type(field).unwrap();
+        } else if is_vec_type(field) {
+            f_type = get_vec_inner_type(field).unwrap();
+        }
     }
     // 默认返回字段标识符
     Ok(FieldFormat {
@@ -102,27 +110,32 @@ fn get_field_name(struct_format: &str, field: &Field) -> Result<FieldFormat, Err
         format: struct_format.to_string(),
         rename: field_name,
         is_option: is_option_type(field),
+        is_vec: is_vec_type(field),
     })
 }
 
-fn is_option_type(field: &Field) -> bool {
+fn outer_type(symbol: &str, field: &Field) -> bool {
     match &field.ty {
         Type::Path(type_path) => {
             let path = &type_path.path;
-            path.is_ident("Option")
-                || path
-                    .segments
-                    .iter()
-                    .any(|segment| segment.ident == "Option")
+            path.is_ident(symbol) || path.segments.iter().any(|segment| segment.ident == symbol)
         }
         _ => false,
     }
 }
 
-fn get_option_inner_type(field: &Field) -> Option<TokenStream> {
+fn is_option_type(field: &Field) -> bool {
+    outer_type("Option", field)
+}
+
+fn is_vec_type(field: &Field) -> bool {
+    outer_type("Vec", field)
+}
+
+fn get_inner_type(symbol: &str, field: &Field) -> Option<TokenStream> {
     if let Type::Path(type_path) = &field.ty {
         if let Some(segment) = type_path.path.segments.last() {
-            if segment.ident == "Option" {
+            if segment.ident == symbol {
                 if let PathArguments::AngleBracketed(args) = &segment.arguments {
                     if let Some(GenericArgument::Type(inner_ty)) = args.args.first() {
                         return Some(inner_ty.to_token_stream());
@@ -132,6 +145,14 @@ fn get_option_inner_type(field: &Field) -> Option<TokenStream> {
         }
     }
     None
+}
+
+fn get_option_inner_type(field: &Field) -> Option<TokenStream> {
+    get_inner_type("Option", field)
+}
+
+fn get_vec_inner_type(field: &Field) -> Option<TokenStream> {
+    get_inner_type("Vec", field)
 }
 
 fn get_attr_field_name(field: &Field, attr_name: &str) -> Option<FieldFormat> {
