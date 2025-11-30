@@ -20,7 +20,7 @@ pub struct FieldInfo {
     pub is_vec: bool,
 }
 // 定义属性优先级顺序
-pub const FORMATS: &[&str] = &["json", "form", "uri", "query", "header"];
+pub const FORMATS: &[&str] = &["ext", "json", "form", "uri", "query", "header"];
 
 /// 优先从指定属性获取字段名，如果没有则返回字段本身名称
 pub fn get_field_info(struct_format: &str, field: &Field) -> Result<FieldInfo, Error> {

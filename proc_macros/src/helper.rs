@@ -7,7 +7,7 @@ use syn::{
 };
 use volo_http::http::header::HeaderMap;
 
-const OPTION_FORMATS: &[&str] = &["uri", "header"];
+const OPTION_FORMATS: &[&str] = &["uri", "header", "ext"];
 
 pub fn outer_type(symbol: &str, ty: &Type) -> bool {
     match ty {

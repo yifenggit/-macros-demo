@@ -71,6 +71,9 @@ pub fn format_expanded(
         "uri" => {
             return uri_deserialize_expanded(field_formats);
         }
+        "ext" => {
+            return ext_deserialize_expanded(field_formats);
+        }
         _ => quote! {},
     }
 }
@@ -203,5 +206,22 @@ fn uri_deserialize_expanded(field_formats: &Vec<FieldInfo>) -> TokenStream {
             }
         }
 
+    }
+}
+
+fn ext_deserialize_expanded(field_formats: &Vec<FieldInfo>) -> TokenStream {
+    let mut field_definitions = Vec::new();
+    for field in field_formats {
+        let field_name_ident = format_ident!("{}", field.name);
+        let fty = &field.f_type;
+        let from_str_parse = quote! {
+            res.#field_name_ident = cx.extensions.get::<#fty>().copied().unwrap_or_default();
+        };
+        field_definitions.push(quote! {
+            #from_str_parse
+        });
+    }
+    quote! {
+        #(#field_definitions)*
     }
 }

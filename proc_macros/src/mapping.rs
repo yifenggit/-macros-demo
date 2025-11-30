@@ -96,8 +96,7 @@ mod tests {
                  token: Option<i64>,
                  #[header]
                  ids: Vec<i64>,
-                 #[json]
-                #[serde(default, rename = "user_id2")]
+                 #[ext]
                  user_id: i64,
                  #[query]
                 #[serde(default)]
