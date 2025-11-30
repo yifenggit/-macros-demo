@@ -132,7 +132,11 @@ fn path_deserialize_expanded(field_formats: &Vec<FieldFormat>) -> TokenStream {
     }
 }
 
-pub fn format_expanded(format: &str, field_formats: &Vec<FieldFormat>) -> TokenStream {
+pub fn format_expanded(
+    has_json: bool,
+    format: &str,
+    field_formats: &Vec<FieldFormat>,
+) -> TokenStream {
     match format {
         "json" => {
             return deserialize_expanded(
@@ -156,14 +160,21 @@ pub fn format_expanded(format: &str, field_formats: &Vec<FieldFormat>) -> TokenS
                 field_formats,
                 format,
                 |struct_name, struct_def_expanded, set_val_expanded| {
-                    quote! {
-                        if !content_type_matches(&parts.headers, mime::APPLICATION, mime::JSON) {
-                            // form deserialize
+                    let form_expanded = quote! {
+                        // form deserialize
                             #struct_def_expanded
                             let bytes = Bytes::from_request(cx, parts.clone(), body).await?;
                             let val = serde_urlencoded::from_bytes::<#struct_name>(bytes.as_ref()).map_err(ExtractBodyError::Form)?;
                             #set_val_expanded
+                    };
+                    if has_json {
+                        quote! {
+                            else {
+                                #form_expanded
+                            }
                         }
+                    } else {
+                        form_expanded
                     }
                 },
             );

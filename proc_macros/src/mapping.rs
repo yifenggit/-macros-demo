@@ -14,7 +14,6 @@ pub fn expand_params_mapping(input: &mut DeriveInput) -> Result<TokenStream, Err
     if let syn::Data::Struct(data) = &input.data {
         if let Fields::Named(fields_named) = &data.fields {
             for field in &fields_named.named {
-                // 遍历每个字段的属性
                 let field_format = get_field_name(default_format.as_str(), field)?;
                 let format = field_format.format.clone();
                 if map_fields.contains_key(&format) {
@@ -26,16 +25,25 @@ pub fn expand_params_mapping(input: &mut DeriveInput) -> Result<TokenStream, Err
         }
     }
 
-    let mut format_deserialize_expanded = Vec::new();
-    for (format, items) in map_fields.iter() {
-        format_deserialize_expanded.push(format_expanded(format, &items));
-        println!("format: {}", format);
-        for item in items {
-            println!(
-                "field name: {}, field type: {}, format: {}, rename: {}, is_option: {}, is_vec: {}",
-                item.name, item.f_type, item.format, item.rename, item.is_option, item.is_vec
-            );
+    let mut sorted_map_fields: HashMap<String, Vec<FieldFormat>> = HashMap::new();
+    for format in FORMATS {
+        let format = format;
+        if let Some(val) = map_fields.get(*format) {
+            sorted_map_fields.insert(format.to_string(), val.clone());
         }
+    }
+
+    let has_json = sorted_map_fields.contains_key("json");
+    let mut format_deserialize_expanded = Vec::new();
+    for (format, items) in sorted_map_fields.iter() {
+        format_deserialize_expanded.push(format_expanded(has_json, format, &items));
+        // println!("format: {}", format);
+        // for item in items {
+        //     println!(
+        //         "field name: {}, field type: {}, format: {}, rename: {}, is_option: {}, is_vec: {}",
+        //         item.name, item.f_type, item.format, item.rename, item.is_option, item.is_vec
+        //     );
+        // }
     }
 
     let expanded = quote! {
