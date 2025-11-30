@@ -153,17 +153,6 @@ impl FromRequest for TestParam {
                 .map_err(ExtractBodyError::Form)?;
             res.uid = val.uid;
         }
-        if let Some(v) = parts.headers.get("token") {
-            res.token = v.to_str().unwrap().parse::<i64>().ok();
-        }
-        if let Some(v) = parts.headers.get("ids") {
-            if let Ok(v) = v.to_str() {
-                res.ids = v
-                    .split(",")
-                    .map(|x| x.parse::<i64>().unwrap_or_default())
-                    .collect();
-            }
-        }
         let params = cx.params();
         for (k, v) in params.iter() {
             match k.as_str() {
@@ -197,6 +186,17 @@ impl FromRequest for TestParam {
             }
             let val = serde_urlencoded::from_str::<QueryMode>(query_str).unwrap();
             res.id = val.id;
+        }
+        if let Some(v) = parts.headers.get("token") {
+            res.token = v.to_str().unwrap().parse::<i64>().ok();
+        }
+        if let Some(v) = parts.headers.get("ids") {
+            if let Ok(v) = v.to_str() {
+                res.ids = v
+                    .split(",")
+                    .map(|x| x.parse::<i64>().unwrap_or_default())
+                    .collect();
+            }
         }
         Ok(res)
     }

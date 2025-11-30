@@ -6,7 +6,9 @@ edition = "2024"
 proc-macro = true
 
 [dependencies]
+faststr = "0.2.32"
 heck = "0.5.0"
+linked-hash-map = "0.5.6"
 mime = "0.3.17"
 proc-macro2 = "1.0.101"
 quote = "1.0.40"

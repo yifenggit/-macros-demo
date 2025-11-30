@@ -1,5 +1,7 @@
 use super::deserialize::*;
 use super::field_struct::*;
+use faststr::FastStr;
+use linked_hash_map::LinkedHashMap;
 use proc_macro2::TokenStream;
 use quote::quote;
 use std::collections::HashMap;
@@ -9,13 +11,13 @@ use volo_http::http::header::HeaderMap;
 pub fn expand_params_mapping(input: &mut DeriveInput) -> Result<TokenStream, Error> {
     let struct_name = &input.ident;
     let default_format = get_default_format(&input.attrs).unwrap();
-    let mut map_fields: HashMap<String, Vec<FieldFormat>> = HashMap::new();
+    let mut map_fields: HashMap<FastStr, Vec<FieldFormat>> = HashMap::new();
 
     if let syn::Data::Struct(data) = &input.data {
         if let Fields::Named(fields_named) = &data.fields {
             for field in &fields_named.named {
                 let field_format = get_field_name(default_format.as_str(), field)?;
-                let format = field_format.format.clone();
+                let format = FastStr::new(field_format.format.as_str());
                 if map_fields.contains_key(&format) {
                     map_fields.get_mut(&format).unwrap().push(field_format);
                 } else {
@@ -25,11 +27,11 @@ pub fn expand_params_mapping(input: &mut DeriveInput) -> Result<TokenStream, Err
         }
     }
 
-    let mut sorted_map_fields: HashMap<String, Vec<FieldFormat>> = HashMap::new();
+    let mut sorted_map_fields: LinkedHashMap<FastStr, Vec<FieldFormat>> = LinkedHashMap::new();
     for format in FORMATS {
-        let format = format;
-        if let Some(val) = map_fields.get(*format) {
-            sorted_map_fields.insert(format.to_string(), val.clone());
+        let format = *format;
+        if let Some(val) = map_fields.get(format) {
+            sorted_map_fields.insert(FastStr::new(format), val.to_owned());
         }
     }
 
