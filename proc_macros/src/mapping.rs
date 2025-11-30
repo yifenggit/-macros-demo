@@ -1,22 +1,22 @@
 use super::deserialize::*;
-use super::field_struct::*;
+use super::field_attr::*;
 use faststr::FastStr;
 use linked_hash_map::LinkedHashMap;
 use proc_macro2::TokenStream;
 use quote::quote;
 use std::collections::HashMap;
-use syn::{DeriveInput, Error, Fields, parse_quote};
+use syn::{DeriveInput, Error, Fields};
 use volo_http::http::header::HeaderMap;
 
 pub fn expand_params_mapping(input: &mut DeriveInput) -> Result<TokenStream, Error> {
     let struct_name = &input.ident;
     let default_format = get_default_format(&input.attrs).unwrap();
-    let mut map_fields: HashMap<FastStr, Vec<FieldFormat>> = HashMap::new();
+    let mut map_fields: HashMap<FastStr, Vec<FieldInfo>> = HashMap::new();
 
     if let syn::Data::Struct(data) = &input.data {
         if let Fields::Named(fields_named) = &data.fields {
             for field in &fields_named.named {
-                let field_format = get_field_name(default_format.as_str(), field)?;
+                let field_format = get_field_info(default_format.as_str(), field)?;
                 let format = FastStr::new(field_format.format.as_str());
                 if map_fields.contains_key(&format) {
                     map_fields.get_mut(&format).unwrap().push(field_format);
@@ -27,7 +27,7 @@ pub fn expand_params_mapping(input: &mut DeriveInput) -> Result<TokenStream, Err
         }
     }
 
-    let mut sorted_map_fields: LinkedHashMap<FastStr, Vec<FieldFormat>> = LinkedHashMap::new();
+    let mut sorted_map_fields: LinkedHashMap<FastStr, Vec<FieldInfo>> = LinkedHashMap::new();
     for format in FORMATS {
         let format = *format;
         if let Some(val) = map_fields.get(format) {
@@ -39,13 +39,6 @@ pub fn expand_params_mapping(input: &mut DeriveInput) -> Result<TokenStream, Err
     let mut format_deserialize_expanded = Vec::new();
     for (format, items) in sorted_map_fields.iter() {
         format_deserialize_expanded.push(format_expanded(has_json, format, &items));
-        // println!("format: {}", format);
-        // for item in items {
-        //     println!(
-        //         "field name: {}, field type: {}, format: {}, rename: {}, is_option: {}, is_vec: {}",
-        //         item.name, item.f_type, item.format, item.rename, item.is_option, item.is_vec
-        //     );
-        // }
     }
 
     let expanded = quote! {
@@ -64,7 +57,7 @@ pub fn expand_params_mapping(input: &mut DeriveInput) -> Result<TokenStream, Err
         }
     };
 
-    Ok(TokenStream::from(expanded))
+    Ok(expanded)
 }
 
 #[allow(dead_code)]
@@ -90,6 +83,7 @@ fn content_type_matches(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use syn::parse_quote;
 
     #[test]
     fn test_expand_params_mapping() {
@@ -111,13 +105,13 @@ mod tests {
                 #[form]
                 #[serde(default)]
                  uid: i64,
-                 #[path]
+                 #[uri]
                  pid: Option<i64>,
-                 #[path]
+                 #[uri]
                  cid: String,
-                 #[path]
+                 #[uri]
                  cids: Vec<i64>,
-                 #[path]
+                 #[uri]
                  items: Option<Vec<i64>>,
             }
         };

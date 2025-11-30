@@ -1871,6 +1871,7 @@ dependencies = [
  "ahash",
  "bytes",
  "mime",
+ "proc_macros",
  "serde",
  "serde_json",
  "serde_urlencoded",

@@ -3,7 +3,11 @@ name = "volo_http_demo"
 version = "0.1.0"
 edition = "2024"
 
+
+
+
 [dependencies]
+proc_macros = { path = "../proc_macros" }
 ahash = "0.8.12"
 bytes = "1.10.1"
 mime = "0.3.17"

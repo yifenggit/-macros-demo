@@ -1,4 +1,3 @@
-use ahash::AHashMap;
 use bytes::Bytes;
 use serde::Deserialize;
 
@@ -10,18 +9,20 @@ use volo_http::{
     server::extract::FromRequest,
 };
 
-#[derive(Debug, Default)]
-pub struct TestParam {
-    pub token: Option<i64>,
-    pub user_id: i64,
-    pub id: i64,
-    pub uid: i64,
-    pub pid: Option<i64>,
-    pub cid: String,
-    pub ids: Vec<i64>,
-    pub items: Option<Vec<i64>>,
-    pub cids: Vec<i64>,
-}
+use proc_macros::Mapping;
+
+// #[derive(Debug, Default)]
+// pub struct TestParam {
+//     pub token: Option<i64>,
+//     pub user_id: i64,
+//     pub id: i64,
+//     pub uid: i64,
+//     pub pid: Option<i64>,
+//     pub cid: String,
+//     pub ids: Vec<i64>,
+//     pub items: Option<Vec<i64>>,
+//     pub cids: Vec<i64>,
+// }
 
 pub fn content_type_matches(
     headers: &HeaderMap,
@@ -125,79 +126,105 @@ pub fn content_type_matches(
 //     }
 // }
 
-impl FromRequest for TestParam {
-    type Rejection = ExtractBodyError;
-    async fn from_request(
-        cx: &mut ServerContext,
-        parts: Parts,
-        body: Body,
-    ) -> Result<Self, Self::Rejection> {
-        let mut res = Self::default();
-        if content_type_matches(&parts.headers, mime::APPLICATION, mime::JSON) {
-            #[derive(Deserialize, Default)]
-            struct JsonMode {
-                #[serde(default, rename = "user_id2")]
-                user_id: i64,
-            }
-            let bytes = Bytes::from_request(cx, parts.clone(), body).await?;
-            let val = sonic_rs::from_slice::<JsonMode>(&bytes).map_err(ExtractBodyError::Json)?;
-            res.user_id = val.user_id;
-        } else {
-            #[derive(Deserialize, Default)]
-            struct FormMode {
-                #[serde(default)]
-                uid: i64,
-            }
-            let bytes = Bytes::from_request(cx, parts.clone(), body).await?;
-            let val = serde_urlencoded::from_bytes::<FormMode>(bytes.as_ref())
-                .map_err(ExtractBodyError::Form)?;
-            res.uid = val.uid;
-        }
-        let params = cx.params();
-        for (k, v) in params.iter() {
-            match k.as_str() {
-                "pid" => res.pid = v.parse::<i64>().ok(),
-                "cid" => {
-                    if let Ok(val) = v.parse::<String>() {
-                        res.cid = val;
-                    }
-                }
-                "cids" => {
-                    res.cids = v
-                        .split(",")
-                        .map(|x| x.parse::<i64>().unwrap_or_default())
-                        .collect()
-                }
-                "items" => {
-                    res.items = Some(
-                        v.split(",")
-                            .map(|x| x.parse::<i64>().unwrap_or_default())
-                            .collect(),
-                    )
-                }
-                _ => {}
-            }
-        }
-        if let Some(query_str) = parts.uri.query() {
-            #[derive(Deserialize, Default)]
-            struct QueryMode {
-                #[serde(default)]
-                id: i64,
-            }
-            let val = serde_urlencoded::from_str::<QueryMode>(query_str).unwrap();
-            res.id = val.id;
-        }
-        if let Some(v) = parts.headers.get("token") {
-            res.token = v.to_str().unwrap().parse::<i64>().ok();
-        }
-        if let Some(v) = parts.headers.get("ids") {
-            if let Ok(v) = v.to_str() {
-                res.ids = v
-                    .split(",")
-                    .map(|x| x.parse::<i64>().unwrap_or_default())
-                    .collect();
-            }
-        }
-        Ok(res)
-    }
+// impl FromRequest for TestParam {
+//     type Rejection = ExtractBodyError;
+//     async fn from_request(
+//         cx: &mut ServerContext,
+//         parts: Parts,
+//         body: Body,
+//     ) -> Result<Self, Self::Rejection> {
+//         let mut res = Self::default();
+//         if content_type_matches(&parts.headers, mime::APPLICATION, mime::JSON) {
+//             #[derive(Deserialize, Default)]
+//             struct JsonMode {
+//                 #[serde(default, rename = "user_id2")]
+//                 user_id: i64,
+//             }
+//             let bytes = Bytes::from_request(cx, parts.clone(), body).await?;
+//             let val = sonic_rs::from_slice::<JsonMode>(&bytes).map_err(ExtractBodyError::Json)?;
+//             res.user_id = val.user_id;
+//         } else {
+//             #[derive(Deserialize, Default)]
+//             struct FormMode {
+//                 #[serde(default)]
+//                 uid: i64,
+//             }
+//             let bytes = Bytes::from_request(cx, parts.clone(), body).await?;
+//             let val = serde_urlencoded::from_bytes::<FormMode>(bytes.as_ref())
+//                 .map_err(ExtractBodyError::Form)?;
+//             res.uid = val.uid;
+//         }
+//         let params = cx.params();
+//         for (k, v) in params.iter() {
+//             match k.as_str() {
+//                 "pid" => res.pid = v.parse::<i64>().ok(),
+//                 "cid" => {
+//                     if let Ok(val) = v.parse::<String>() {
+//                         res.cid = val;
+//                     }
+//                 }
+//                 "cids" => {
+//                     res.cids = v
+//                         .split(",")
+//                         .map(|x| x.parse::<i64>().unwrap_or_default())
+//                         .collect()
+//                 }
+//                 "items" => {
+//                     res.items = Some(
+//                         v.split(",")
+//                             .map(|x| x.parse::<i64>().unwrap_or_default())
+//                             .collect(),
+//                     )
+//                 }
+//                 _ => {}
+//             }
+//         }
+//         if let Some(query_str) = parts.uri.query() {
+//             #[derive(Deserialize, Default)]
+//             struct QueryMode {
+//                 #[serde(default)]
+//                 id: i64,
+//             }
+//             let val = serde_urlencoded::from_str::<QueryMode>(query_str).unwrap();
+//             res.id = val.id;
+//         }
+//         if let Some(v) = parts.headers.get("token") {
+//             res.token = v.to_str().unwrap().parse::<i64>().ok();
+//         }
+//         if let Some(v) = parts.headers.get("ids") {
+//             if let Ok(v) = v.to_str() {
+//                 res.ids = v
+//                     .split(",")
+//                     .map(|x| x.parse::<i64>().unwrap_or_default())
+//                     .collect();
+//             }
+//         }
+//         Ok(res)
+//     }
+// }
+
+#[derive(Mapping, Debug, Default)]
+pub struct TestParam {
+    #[header]
+    #[serde(default, rename = "token")]
+    token: Option<i64>,
+    #[header]
+    ids: Vec<i64>,
+    #[json]
+    #[serde(default, rename = "user_id2")]
+    user_id: i64,
+    #[query]
+    #[serde(default)]
+    id: i64,
+    #[form]
+    #[serde(default)]
+    uid: Option<i64>,
+    #[uri]
+    pid: Option<i64>,
+    #[uri]
+    cid: String,
+    #[uri]
+    cids: Vec<i64>,
+    #[uri]
+    items: Option<Vec<i64>>,
 }

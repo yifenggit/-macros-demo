@@ -2,21 +2,18 @@ use ahash::AHashMap;
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashMap, convert::Infallible, net::SocketAddr, str::FromStr, time::Duration,
+     convert::Infallible, net::SocketAddr, str::FromStr, time::Duration,
 };
 use volo_http::{
     Address,
     body::Body,
     context::ServerContext,
     error::server::ExtractBodyError,
-    http::{StatusCode, header, header::HeaderMap, request::Parts},
+    http::{StatusCode, request::Parts},
     server::{
         Router, Server,
         extract::{FromContext, FromRequest},
         layer::TimeoutLayer,
-        param::PathParams,
-        param::PathParamsMap,
-        param::PathParamsRejection,
         route::get,
     },
 };
@@ -168,7 +165,7 @@ pub fn test_router() -> Router {
         .route("/foo/{uid}/{jid}", get(header_handoer))
         .merge(Router::new().route("/json", get(json_handoer)))
         .merge(Router::new().route("/form", get(form_handoer)))
-        .merge(Router::new().route("/test/{pid}/{cid}/{cids}", get(test_handoer)))
+        .merge(Router::new().route("/test/{pid}/{cid}/{items}/{cids}", get(test_handoer)))
 }
 
 fn timeout_handler(_: &ServerContext) -> (StatusCode, &'static str) {
