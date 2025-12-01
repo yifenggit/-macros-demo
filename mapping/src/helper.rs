@@ -5,7 +5,6 @@ use syn::{
     Field, GenericArgument, Lit, Meta, MetaNameValue, PathArguments, Token, Type,
     punctuated::Punctuated,
 };
-use volo_http::http::header::HeaderMap;
 
 const OPTION_FORMATS: &[&str] = &["uri", "header", "ext"];
 
@@ -103,24 +102,4 @@ pub fn meta_name_value_str(nv: &MetaNameValue) -> Option<String> {
         }
     }
     None
-}
-
-#[allow(dead_code)]
-pub fn content_type_matches(
-    headers: &HeaderMap,
-    ty: mime::Name<'static>,
-    subtype: mime::Name<'static>,
-) -> bool {
-    use std::str::FromStr;
-    let Some(content_type) = headers.get(volo_http::http::header::CONTENT_TYPE) else {
-        return false;
-    };
-    let Ok(content_type) = content_type.to_str() else {
-        return false;
-    };
-    let Ok(mime) = mime::Mime::from_str(content_type) else {
-        return false;
-    };
-    // `text/xml` or `image/svg+xml`
-    (mime.type_() == ty && mime.subtype() == subtype) || mime.suffix() == Some(subtype)
 }

@@ -783,7 +783,6 @@ dependencies = [
  "serde_urlencoded",
  "sonic-rs",
  "syn",
- "volo-http 0.5.0",
 ]
 
 [[package]]
