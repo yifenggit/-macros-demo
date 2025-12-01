@@ -776,12 +776,8 @@ dependencies = [
  "faststr",
  "heck",
  "linked-hash-map",
- "mime",
  "proc-macro2",
  "quote",
- "serde",
- "serde_urlencoded",
- "sonic-rs",
  "syn",
 ]
 
