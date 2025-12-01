@@ -6,7 +6,6 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use std::collections::HashMap;
 use syn::{DeriveInput, Error, Fields};
-use volo_http::http::header::HeaderMap;
 
 pub fn expand_params_mapping(input: &mut DeriveInput) -> Result<TokenStream, Error> {
     let struct_name = &input.ident;
@@ -42,13 +41,34 @@ pub fn expand_params_mapping(input: &mut DeriveInput) -> Result<TokenStream, Err
     }
 
     let expanded = quote! {
-        impl FromRequest for #struct_name {
-            type Rejection = ExtractBodyError;
+        impl #struct_name {
+            #[allow(dead_code)]
+            fn content_type_matches(
+                headers: &volo_http::http::header::HeaderMap,
+                ty: mime::Name<'static>,
+                subtype: mime::Name<'static>,
+            ) -> bool {
+                use std::str::FromStr;
+                let Some(content_type) = headers.get(volo_http::http::header::CONTENT_TYPE) else {
+                    return false;
+                };
+                let Ok(content_type) = content_type.to_str() else {
+                    return false;
+                };
+                let Ok(mime) = mime::Mime::from_str(content_type) else {
+                    return false;
+                };
+                // `text/xml` or `image/svg+xml`
+                (mime.type_() == ty && mime.subtype() == subtype) || mime.suffix() == Some(subtype)
+            }
+        }
+        impl volo_http::server::extract::FromRequest for #struct_name {
+            type Rejection = volo_http::error::server::ExtractBodyError;
 
             async fn from_request(
-                cx: &mut ServerContext,
-                parts: Parts,
-                body: Body,
+                cx: &mut volo_http::context::ServerContext,
+                parts: volo_http::http::request::Parts,
+                body: volo_http::body::Body,
             ) -> Result<Self, Self::Rejection> {
                 let mut res = Self::default();
                 #(#format_deserialize_expanded)*
@@ -60,26 +80,6 @@ pub fn expand_params_mapping(input: &mut DeriveInput) -> Result<TokenStream, Err
     Ok(expanded)
 }
 
-#[allow(dead_code)]
-fn content_type_matches(
-    headers: &HeaderMap,
-    ty: mime::Name<'static>,
-    subtype: mime::Name<'static>,
-) -> bool {
-    use std::str::FromStr;
-    let Some(content_type) = headers.get(volo_http::http::header::CONTENT_TYPE) else {
-        return false;
-    };
-    let Ok(content_type) = content_type.to_str() else {
-        return false;
-    };
-    let Ok(mime) = mime::Mime::from_str(content_type) else {
-        return false;
-    };
-    // `text/xml` or `image/svg+xml`
-    (mime.type_() == ty && mime.subtype() == subtype) || mime.suffix() == Some(subtype)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -88,7 +88,7 @@ mod tests {
     #[test]
     fn test_expand_params_mapping() {
         let mut input: DeriveInput = parse_quote! {
-            #[derive(Mapping)]
+            #[derive(Mapping, Default, Debug)]
             #[format = "json"]
             pub struct TestParam{
                 #[header]
@@ -96,6 +96,9 @@ mod tests {
                  token: Option<i64>,
                  #[header]
                  ids: Vec<i64>,
+                 #[json]
+                #[serde(default)]
+                 name: i64,
                  #[ext]
                  user_id: i64,
                  #[query]
@@ -116,5 +119,6 @@ mod tests {
         };
         let result = expand_params_mapping(&mut input).unwrap();
         println!("code: \n{}", result.to_string());
+        assert!(true);
     }
 }

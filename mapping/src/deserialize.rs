@@ -15,10 +15,10 @@ pub fn format_expanded(
                 |struct_name, struct_def_expanded, set_val_expanded| {
                     quote! {
                         // json deserialize
-                        if content_type_matches(&parts.headers, mime::APPLICATION, mime::JSON) {
+                        if Self::content_type_matches(&parts.headers, mime::APPLICATION, mime::JSON) {
                             #struct_def_expanded
-                            let bytes = Bytes::from_request(cx, parts.clone(), body).await?;
-                            let val = sonic_rs::from_slice::<#struct_name>(&bytes).map_err(ExtractBodyError::Json)?;
+                            let bytes = bytes::Bytes::from_request(cx, parts.clone(), body).await?;
+                            let val = sonic_rs::from_slice::<#struct_name>(&bytes).map_err(volo_http::error::server::ExtractBodyError::Json)?;
                             #set_val_expanded
                         }
                     }
@@ -33,8 +33,8 @@ pub fn format_expanded(
                     let form_expanded = quote! {
                         // form deserialize
                             #struct_def_expanded
-                            let bytes = Bytes::from_request(cx, parts.clone(), body).await?;
-                            let val = serde_urlencoded::from_bytes::<#struct_name>(bytes.as_ref()).map_err(ExtractBodyError::Form)?;
+                            let bytes = bytes::Bytes::from_request(cx, parts.clone(), body).await?;
+                            let val = serde_urlencoded::from_bytes::<#struct_name>(bytes.as_ref()).map_err(volo_http::error::server::ExtractBodyError::Form)?;
                             #set_val_expanded
                     };
                     if has_json {
@@ -105,7 +105,7 @@ where
         });
     }
     let struct_def_expanded = quote! {
-        #[derive(Deserialize, Default)]
+        #[derive(serde::Deserialize, Default)]
         struct #struct_name {
             #(#field_definitions)*
         }

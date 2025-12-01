@@ -1,3 +1,3 @@
 [workspace]
-members = ["macros", "proc_macros","mymacros", "proc_macros_demo", "volo_http_demo", "sonic-rs-demo"]
+members = ["macros", "mapping", "mymacros", "proc_macros_demo", "volo_http_demo", "sonic-rs-demo"]
 resolver = "3"

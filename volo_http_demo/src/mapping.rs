@@ -1,15 +1,4 @@
-use bytes::Bytes;
-use serde::Deserialize;
-
-use volo_http::{
-    body::Body,
-    context::ServerContext,
-    error::server::ExtractBodyError,
-    http::{header, header::HeaderMap, request::Parts},
-    server::extract::FromRequest,
-};
-
-use proc_macros::Mapping;
+use mapping::Mapping;
 
 // #[derive(Debug, Default)]
 // pub struct TestParam {
@@ -24,24 +13,24 @@ use proc_macros::Mapping;
 //     pub cids: Vec<i64>,
 // }
 
-pub fn content_type_matches(
-    headers: &HeaderMap,
-    ty: mime::Name<'static>,
-    subtype: mime::Name<'static>,
-) -> bool {
-    use std::str::FromStr;
-    let Some(content_type) = headers.get(header::CONTENT_TYPE) else {
-        return false;
-    };
-    let Ok(content_type) = content_type.to_str() else {
-        return false;
-    };
-    let Ok(mime) = mime::Mime::from_str(content_type) else {
-        return false;
-    };
-    // `text/xml` or `image/svg+xml`
-    (mime.type_() == ty && mime.subtype() == subtype) || mime.suffix() == Some(subtype)
-}
+// pub fn content_type_matches(
+//     headers: &HeaderMap,
+//     ty: mime::Name<'static>,
+//     subtype: mime::Name<'static>,
+// ) -> bool {
+//     use std::str::FromStr;
+//     let Some(content_type) = headers.get(header::CONTENT_TYPE) else {
+//         return false;
+//     };
+//     let Ok(content_type) = content_type.to_str() else {
+//         return false;
+//     };
+//     let Ok(mime) = mime::Mime::from_str(content_type) else {
+//         return false;
+//     };
+//     // `text/xml` or `image/svg+xml`
+//     (mime.type_() == ty && mime.subtype() == subtype) || mime.suffix() == Some(subtype)
+// }
 
 // impl Default for TestParam {
 //     fn default() -> Self {
@@ -202,8 +191,7 @@ pub fn content_type_matches(
 //         Ok(res)
 //     }
 // }
-
-#[derive(Mapping, Debug, Default)]
+#[derive(Mapping, Default, Debug)]
 pub struct TestParam {
     #[header]
     #[serde(default, rename = "token")]
@@ -211,14 +199,16 @@ pub struct TestParam {
     #[header]
     ids: Vec<i64>,
     #[json]
-    #[serde(default, rename = "user_id2")]
+    #[serde(default)]
+    name: i64,
+    #[ext]
     user_id: i64,
     #[query]
     #[serde(default)]
     id: i64,
     #[form]
     #[serde(default)]
-    uid: Option<i64>,
+    uid: i64,
     #[uri]
     pid: Option<i64>,
     #[uri]

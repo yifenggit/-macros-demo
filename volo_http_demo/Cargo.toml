@@ -7,7 +7,7 @@ edition = "2024"
 
 
 [dependencies]
-proc_macros = { path = "../proc_macros" }
+mapping = { path = "../mapping" }
 ahash = "0.8.12"
 bytes = "1.10.1"
 mime = "0.3.17"

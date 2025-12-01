@@ -5,7 +5,7 @@ edition = "2024"
 
 
 [dependencies]
-proc_macros = { path = "../proc_macros" }
+mapping = { path = "../mapping" }
 macros = { path = "../macros" }
 syn = { version = "2.0.106", features = ["full", "extra-traits"] }
 volo-http = "0.4.3"
